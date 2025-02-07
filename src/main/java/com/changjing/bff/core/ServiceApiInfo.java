@@ -1,6 +1,6 @@
 package com.changjing.bff.core;
 
-import com.changjing.bff.common.ServiceConfig;
+import com.changjiang.bff.annotation.ServiceConfig;
 import lombok.Data;
 
 import java.lang.reflect.Method;

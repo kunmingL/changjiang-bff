@@ -1,7 +1,8 @@
 package com.changjing.backend.api;
 
-import com.changjing.bff.common.ServiceConfig;
-import com.changjing.bff.common.SrvChannel;
+
+import com.changjiang.bff.annotation.ServiceConfig;
+import com.changjiang.bff.constants.SrvChannel;
 
 public class DemoApi {
 

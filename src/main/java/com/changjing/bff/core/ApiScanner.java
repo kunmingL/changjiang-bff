@@ -1,6 +1,6 @@
 package com.changjing.bff.core;
 
-import com.changjing.bff.common.ServiceConfig;
+import com.changjiang.bff.annotation.ServiceConfig;
 import org.reflections.Reflections;
 import org.reflections.scanners.MethodAnnotationsScanner;
 import org.reflections.util.ConfigurationBuilder;
