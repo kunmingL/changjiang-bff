@@ -1,6 +1,6 @@
 package com.changjing.bff.service;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import com.changjing.bff.core.ServiceApiInfo;
 
 public interface TransferService {

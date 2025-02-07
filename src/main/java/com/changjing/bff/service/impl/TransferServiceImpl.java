@@ -1,9 +1,11 @@
 package com.changjing.bff.service.impl;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
+import com.changjiang.grpc.lib.GrpcServiceGrpc;
 import com.changjing.bff.core.ServiceApiInfo;
 import com.changjing.bff.core.ServiceApiScanner;
 import com.changjing.bff.service.TransferService;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,13 @@ public class TransferServiceImpl implements TransferService {
     
     @Autowired
     private ServiceApiScanner apiScanner;
+
+    
+    @Value("${service.backend.host}")
+    private String serviceHost;
+    
+    @Value("${service.backend.port}")
+    private int servicePort;
 
     /**
      * 执行从CRPC服务转移的调用
@@ -47,8 +56,14 @@ public class TransferServiceImpl implements TransferService {
     @Override
     public Object executeServiceApi(ServiceApiInfo apiInfo, JSONObject inputObject) throws Exception {
         try {
-            // 直接调用目标方法
-            return apiInfo.getMethod().invoke(apiInfo.getInstance(), inputObject);
+            // 使用gRPC客户端调用远程服务
+            return GrpcServiceGrpc.invokeService(
+                serviceHost,
+                servicePort,
+                apiInfo.getConfig().registryId(),
+                apiInfo.getMethod().getName(),
+                inputObject
+            );
         } catch (Exception e) {
             logger.severe("Failed to execute service api: " + e.getMessage());
             throw e;
