@@ -1,6 +1,6 @@
 package com.changjing.bff.web;
 
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import com.changjing.bff.dto.LoginUserInfo;
 import com.changjing.bff.object.response.Result;
 import com.changjing.bff.service.TransferService;
