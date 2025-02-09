@@ -17,17 +17,9 @@
 4. 多渠道支持：支持 PC、移动等多个渠道
 
 ## ServiceConfig 注解说明
+
 ```java
-@ServiceConfig(
-    registryId = "服务注册ID",
-    url = "服务URL",
-    channel = {SrvChannel.PC, SrvChannel.MOBILE},
-    dealResType = false,
-    dataMask = false,
-    methodName = "方法名",
-    specClassReference = {},
-    referField = ""
-)
+
 ```
 
 ## 配置说明
@@ -53,12 +45,9 @@
 3. 建议添加适当的安全措施
 
 ## ServiceConfig 注解使用示例
+
 ```java
-@ServiceConfig(
-    registryId = "demo.api.test",
-    url = "/api/demo/test",
-    channel = {SrvChannel.PC, SrvChannel.MOBILE}
-)
+
 public Object testApi(Object request) {
     // 实际处理逻辑
     return null;
