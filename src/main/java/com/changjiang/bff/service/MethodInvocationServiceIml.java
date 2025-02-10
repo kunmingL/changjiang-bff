@@ -43,7 +43,7 @@ import java.util.List;
 @Service
 public class MethodInvocationServiceIml implements MethodInvocationService {
 
-    @GrpcReference(register = "elearn")
+    @GrpcReference(register="elearn")
     private SpokenEnglish spokenEnglish;
     /** 
      * 日志记录器
