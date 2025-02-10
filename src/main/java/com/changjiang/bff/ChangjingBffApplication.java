@@ -12,7 +12,9 @@ import org.springframework.context.annotation.ComponentScan;
     "com.changjiang.bff.core",
     "com.changjiang.bff.config",
     "com.changjiang.bff.util",
-    "com.changjiang.grpc"
+    "com.changjiang.grpc",
+    "com.changjiang.bff.web",
+    "com.changjiang.bff.service"
 })
 public class ChangjingBffApplication {
 

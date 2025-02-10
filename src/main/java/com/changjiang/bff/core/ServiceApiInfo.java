@@ -46,7 +46,7 @@ public class ServiceApiInfo {
      */
     private String description;
 
-    private Class requestType;
+    private Class[] requestType;
 
     private Class responseType;
 

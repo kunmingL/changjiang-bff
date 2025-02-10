@@ -1,12 +1,14 @@
 package com.changjiang.bff.web;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.changjiang.bff.constants.BasicConstants;
 import com.changjiang.bff.dto.LoginUserInfo;
 import com.changjiang.bff.object.response.Result;
+import com.changjiang.bff.service.MethodInvocationServiceIml;
 import com.changjiang.bff.service.TransferService;
-import com.changjiang.bff.constants.BasicConstants;
 import com.changjiang.bff.constants.PubConstants;
 import com.changjiang.bff.dto.SessionInfo;
+import com.changjiang.bff.service.impl.MethodInvocationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -37,8 +39,11 @@ public abstract class DefaultController {
      * 用于处理跨服务调用
      * 被executeTransferToCrpcService方法调用
      */
+//    @Autowired
+//    protected TransferService transferService;
+
     @Autowired
-    protected TransferService transferService;
+    private MethodInvocationService methodInvocationService;
 
     /**
      * 组装会话信息
@@ -100,7 +105,7 @@ public abstract class DefaultController {
 
         try {
             // 获取请求的URI，用于日志记录和异常处理
-            uri = servletRequest.getRequestURI().trim();
+            uri = servletRequest.getRequestURI().trim().replace("/changjiang","");
             // 登录用户信息（已注释）
             //LoginUserInfo user = SessionUtils.getLoginUserInfo();
             // 记录用户信息日志
@@ -112,8 +117,8 @@ public abstract class DefaultController {
             // 将会话信息添加到RRpc上下文中（已注释）
             //RrpcContext.getRrpcContext().getExtensionAreaStr("session_operator", JSON.toJSONString(sessionInfo));
             // 执行跨服务调用到Crpc服务
-            T srvRes = (T) transferService.executeTransferToCrpcService(inputObject, uri);
-
+            //T srvRes = (T) transferService.executeTransferToCrpcService(inputObject, uri);
+            T srvRes = methodInvocationService.invokeService(uri, inputObject);
             // 根据服务调用结果进行处理
             if (srvRes instanceof Map) {
                 // 如果返回结果是Map类型，提取相应的代码、数据和错误消息

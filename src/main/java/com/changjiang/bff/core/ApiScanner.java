@@ -57,6 +57,10 @@ public class ApiScanner {
     // 用于存储扫描到的服务API信息，键为服务的唯一标识（URL或Registry ID），值为服务信息对象
     private final ConcurrentHashMap<String, ServiceApiInfo> apiRegistry = new ConcurrentHashMap<>();
 
+    public ConcurrentHashMap<String, ServiceApiInfo> getApiRegistry() {
+        return apiRegistry;
+    }
+
     @Autowired
     private GrpcServiceFactory grpcServiceFactory;
 
@@ -196,7 +200,7 @@ public class ApiScanner {
                 .instance(grpcClient)
                 // 获取方法参数类型和返回类型
                 .requestType(method.getParameterTypes().length > 0 ?
-                        method.getParameterTypes()[0] : null)
+                        method.getParameterTypes() : null)
                 .responseType(method.getReturnType())
                 .methodName(method.getName())
                 // HTTP相关信息

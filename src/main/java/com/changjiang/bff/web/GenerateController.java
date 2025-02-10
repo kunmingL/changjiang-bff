@@ -26,7 +26,7 @@ public class GenerateController extends DefaultController {
     // 允许跨域请求，接受所有来源的请求
     @CrossOrigin(origins = "*")
     // 处理所有以POST方法发送的请求，返回JSON格式的数据
-    @RequestMapping(value = "/*", produces = MediaType.APPLICATION_JSON_VALUE, method = RequestMethod.POST)
+    @RequestMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE, method = RequestMethod.POST)
     public <T> Result<T> executeLogic(@RequestBody JSONObject inputObject) {
         // 初始化响应码、数据和错误信息
         String code = null;
