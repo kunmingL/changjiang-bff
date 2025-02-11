@@ -43,8 +43,6 @@ import java.util.List;
 @Service
 public class MethodInvocationServiceIml implements MethodInvocationService {
 
-    @GrpcReference(register="elearn")
-    private SpokenEnglish spokenEnglish;
     /** 
      * 日志记录器
      * 用于记录方法调用的过程和异常
@@ -64,7 +62,6 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
      */
     public Object invokeService(String url, JSONObject params) throws Exception {
         logger.info("尝试调用服务，URL: {}", url);
-        spokenEnglish.spokenEnglish("kunming");
         // 1. 从 apiRegistry 中获取 ServiceApiInfo 对象
         ServiceApiInfo apiInfo = apiScanner.getApiRegistry().get(url);
         if (apiInfo == null) {
