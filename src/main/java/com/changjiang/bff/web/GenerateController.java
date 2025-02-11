@@ -31,12 +31,13 @@ public class GenerateController extends DefaultController {
     @CrossOrigin(origins = "*")
     // 处理所有以POST方法发送的请求，返回JSON格式的数据
     @RequestMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE, method = RequestMethod.POST)
-    public <T> Result<T> executeLogic(@RequestBody JSONObject inputObject) {
-        spokenEnglish.spokenEnglish("kunming");
+    public Result<?> executeLogic(@RequestBody JSONObject inputObject) {
+//        String kunming = spokenEnglish.spokenEnglish("kunming");
+//        return kunming;
 
         // 初始化响应码、数据和错误信息
         String code = null;
-        T resData = null;
+        Object resData = null;
         String errMsg = null;
         String uri = null;
 
@@ -53,7 +54,9 @@ public class GenerateController extends DefaultController {
             // 获取请求的URI并去除空格
             uri = attrs.getRequest().getRequestURI().trim();
             // 调用方法处理请求并返回结果
-            return executeTransferToCrpcService(inputObject, attrs.getRequest());
+            @SuppressWarnings("unchecked")
+            Result<?> objectResult = executeTransferToCrpcService(inputObject, attrs.getRequest());
+            return objectResult;
         } catch (Exception e) {
             // 打印异常信息并记录日志
             e.printStackTrace();
