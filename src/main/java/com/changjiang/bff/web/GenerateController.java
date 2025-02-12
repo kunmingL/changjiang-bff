@@ -18,7 +18,7 @@ public class GenerateController extends DefaultController {
 
     private final Logger logger = LoggerFactory.getLogger(GenerateController.class);
 
-    @GrpcReference(register = "elearn")
+    @GrpcReference(registry = "elearn")
     private SpokenEnglish spokenEnglish;
     /**
      * 处理所有POST请求
@@ -32,8 +32,8 @@ public class GenerateController extends DefaultController {
     // 处理所有以POST方法发送的请求，返回JSON格式的数据
     @RequestMapping(value = "/**", produces = MediaType.APPLICATION_JSON_VALUE, method = RequestMethod.POST)
     public Result<?> executeLogic(@RequestBody JSONObject inputObject) {
-//        String kunming = spokenEnglish.spokenEnglish("kunming");
-//        return kunming;
+       // String kunming = spokenEnglish.spokenEnglish("kunming");
+
 
         // 初始化响应码、数据和错误信息
         String code = null;
