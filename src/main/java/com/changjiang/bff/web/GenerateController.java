@@ -3,7 +3,6 @@ package com.changjiang.bff.web;
 import com.alibaba.fastjson2.JSONObject;
 import com.changjiang.bff.constants.BasicConstants;
 import com.changjiang.bff.object.response.Result;
-import com.changjiang.elearn.api.service.SpokenEnglish;
 import com.changjiang.grpc.annotation.GrpcReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,14 +16,11 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class GenerateController extends DefaultController {
 
     private final Logger logger = LoggerFactory.getLogger(GenerateController.class);
-
-    @GrpcReference(registry = "elearn")
-    private SpokenEnglish spokenEnglish;
     /**
      * 处理所有POST请求
      * @param inputObject
      * @return
-     * @param <T>
+     * @param
      */
 
     // 允许跨域请求，接受所有来源的请求

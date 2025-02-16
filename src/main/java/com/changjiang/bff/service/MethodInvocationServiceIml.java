@@ -7,7 +7,7 @@ import com.changjiang.bff.entity.RequestObject;
 import com.changjiang.bff.entity.ServiceInfo;
 import com.changjiang.bff.service.impl.MethodInvocationService;
 import com.changjiang.bff.util.NpcsSerializerUtil;
-import com.changjiang.elearn.api.service.SpokenEnglish;
+
 import com.changjiang.grpc.annotation.GrpcReference;
 import com.changjiang.grpc.annotation.GrpcService;
 import com.fasterxml.jackson.databind.JavaType;
@@ -29,12 +29,12 @@ import java.util.List;
  * 1. 执行服务方法的实际调用
  * 2. 处理方法调用的参数转换
  * 3. 管理调用过程的异常处理
- * 
+ *
  * 使用场景：
  * - 执行本地Java方法调用
  * - 处理RPC远程方法调用
  * - 统一的方法调用异常处理
- * 
+ *
  * 调用关系：
  * - 被TransferServiceImpl调用执行具体方法
  * - 调用MethodIntrospector获取方法信息
@@ -43,7 +43,7 @@ import java.util.List;
 @Service
 public class MethodInvocationServiceIml implements MethodInvocationService {
 
-    /** 
+    /**
      * 日志记录器
      * 用于记录方法调用的过程和异常
      */
@@ -60,6 +60,7 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
      * @return 服务方法的返回值
      * @throws Exception 如果调用失败
      */
+    @Override
     public Object invokeService(String url, JSONObject params) throws Exception {
         logger.info("尝试调用服务，URL: {}", url);
         // 1. 从 apiRegistry 中获取 ServiceApiInfo 对象
@@ -91,118 +92,153 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
      * 处理前端请求参数并转换为适合后端微服务接口的参数类型。
      *
      * @param serviceInfo 后端服务信息对象，包含接口参数类型等相关信息。
-     * @param param       前端传入的 JSON 对象参数。
+     * @param param      前端传入的 JSON 对象参数。
      * @return 转换后的请求参数数组，供后端微服务调用使用。
      */
     public Object[] handleRequestParams(ServiceApiInfo serviceInfo, JSONObject param) {
-        // 初始化变量
-        Class<?> reqType = null; // 请求参数类型
-        Class<?> parameterType = null; // 泛型参数类型（如 List 的泛型类型）
-        RequestObject requestObject = buildRequestObjectByInfo(serviceInfo); // 根据服务信息构建请求对象
+        logger.info("开始处理请求参数, serviceInfo: {}, param: {}", serviceInfo, param);
 
-        // 获取请求参数类型信息
-        if (requestObject.getArgsType() != null && requestObject.getArgsType().length > 0) {
-            reqType = requestObject.getArgsType()[0]; // 获取请求参数的具体类型
+        // 1. 获取参数类型信息
+        Class<?>[] reqTypes = serviceInfo.getRequestType();
+        if (reqTypes == null || reqTypes.length == 0) {
+            logger.warn("请求参数类型为空");
+            return new Object[]{null};
         }
-        if (requestObject.getParameterizedTypes() != null && requestObject.getParameterizedTypes().length > 0) {
-            parameterType = requestObject.getParameterizedTypes()[0]; // 获取泛型参数类型
-        }
+        Class<?> reqType = reqTypes[0];
 
-        // 初始化请求参数相关变量
-        Object reqObjInJson = null;
-        Object reqObject = null;
-        JSONObject reqObj = param;
-
-        // 如果请求参数为空或无数据，则直接返回空数组
-        if (reqObj == null || reqObj.isEmpty()) {
+        // 2. 如果请求参数为空，返回null
+        if (param == null || param.isEmpty()) {
+            logger.info("请求参数为空");
             return new Object[]{null};
         }
 
-        // 根据不同参数类型进行处理
-        if (reqType != null) {
-            if (isPrimitiveClass(reqType)) {
-                // 处理基本类型参数（如 int、long、String 等）
-                Iterator<String> iterator = reqObj.keySet().iterator();
-                while (iterator.hasNext()) {
-                    String key = iterator.next();
-                    reqObjInJson = reqObj.getObject(key, reqType); // 将 JSON 中的值转换为目标类型
-                    break; // 只取第一个字段的值
-                }
-                reqObject = reqObjInJson;
-            } else if (reqType.equals(List.class)) {
-                // 处理 List 类型参数
-                if (parameterType != null && reqObj != null && !CollectionUtils.isEmpty((List<?>) reqObj)) {
-                    // 处理泛型 List 参数
-                    JavaType javaType = NpcsSerializerUtil.getTypeByClass(List.class, parameterType);
-                    String paramSerializeStr = NpcsSerializerUtil.writeValueAsStringNormal(reqObj); // 序列化为 JSON 字符串
-                    reqObject = NpcsSerializerUtil.readValueNormal(paramSerializeStr, javaType); // 反序列化为目标类型
-                }
-            } else {
-                // 处理其他复杂类型参数
-                try {
-                    reqObjInJson = NpcsSerializerUtil.writeValueAsStringNormal(reqObj); // 将 JSON 对象序列化为字符串
-                    logger.info("handleRequestParams, reqType:{}", reqType.getName());
+        try {
+            // 3. 处理不同类型的参数
+            Object convertedParam = null;
 
-                    // 特殊处理分页参数（PageParm 类型）
-                    if (reqType.getName().contains("PageParm")) {
-                        //Object pageReq = NpcsSerializerUtil.readValueNormal(reqObjInJson, reqType); // 反序列化为分页对象
-                        JSONObject dataObj = reqObj.getJSONObject("data"); // 获取分页数据部分
-
-                        if (dataObj != null) {
-//                            // 处理特殊类型引用
-//                            if (serviceInfo.getSpecClassReferMap() != null && !serviceInfo.getSpecClassReferMap().isEmpty()) {
-//                                String fieldKey = serviceInfo.getReferField(); // 获取引用字段名
-//                                String referValue = dataObj.getString(fieldKey); // 获取引用字段值
-//
-//                                if (!StringUtils.isEmpty(referValue)) {
-//                                    reqType = serviceInfo.getSpecClassReferMap().get(referValue); // 根据引用值获取目标类型
-//                                }
-//                            }
-//
-//                            // 构建目标类型的 JavaType 并反序列化
-//                            JavaType javaType = NpcsSerializerUtil.getTypeByClass(reqType);
-//                            reqObject = NpcsSerializerUtil.readValueNormal(reqObjInJson, javaType);
-                        }
-                    } else {
-                        // 默认处理方式：直接反序列化为目标类型
-                        //reqObject = NpcsSerializerUtil.readValueNormal(reqObjInJson, reqType);
-                    }
-                } catch (Exception e) {
-                    logger.error("handleRequestParams failed to convert param, error: {}", e.getMessage(), e);
-                    throw new RuntimeException("Failed to convert request parameters", e);
-                }
+            // 3.1 处理基本类型
+            if (isPrimitiveOrWrapper(reqType)) {
+                convertedParam = handlePrimitiveType(param, reqType);
             }
-        }
+            // 3.2 处理List类型
+            else if (List.class.isAssignableFrom(reqType)) {
+                convertedParam = handleListType(param, reqType);
+            }
+            // 3.3 处理分页类型
+            else if (reqType.getName().contains("PageParam") || reqType.getName().contains("Page")) {
+                convertedParam = handlePageType(param, reqType);
+            }
+            // 3.4 处理普通实体类型
+            else {
+                convertedParam = handleEntityType(param, reqType);
+            }
 
-        // 设置请求参数并返回
-        Object[] reqParams = new Object[]{reqObject};
-        logger.info("handleRequestParams, serialized request object: {}", reqObjInJson);
-        requestObject.setReqObj(reqParams); // 设置请求对象中的参数
-        return reqParams;
+            logger.info("参数处理完成, 转换后的参数: {}", convertedParam);
+            return new Object[]{convertedParam};
+
+        } catch (Exception e) {
+            logger.error("处理请求参数时发生错误", e);
+            throw new RuntimeException("参数转换失败: " + e.getMessage(), e);
+        }
     }
 
-         /**
-      * 判断是否为基本类型
-      * @param clazz 类型
-      * @return 是否基本类型
-      */
-     private boolean isPrimitiveClass(Class clazz) {
-         if (clazz == String.class || clazz == Long.class || clazz == Integer.class ||
-             clazz == BigDecimal.class || clazz == Boolean.class || clazz == List.class) {
-             return true;
-         }
-         return false;
-     }
+    /**
+     * 处理基本类型参数
+     */
+    private Object handlePrimitiveType(JSONObject param, Class<?> targetType) {
+        if (param.isEmpty()) {
+            return null;
+        }
 
-     /**
-      * 构建请求对象
-      * @param serviceInfo 服务信息
-      * @return 请求对象
-      */
-     public RequestObject buildRequestObjectByInfo(ServiceApiInfo serviceInfo) {
-         RequestObject requestObject = new RequestObject();
-         requestObject.setArgsType(serviceInfo.getRequestType());
-         //requestObject.setParameterizedTypes(serviceInfo.);
-         return requestObject;
-     }
+        String firstKey = param.keySet().iterator().next();
+        return param.getObject(firstKey, targetType);
+    }
+
+    /**
+     * 处理List类型参数
+     */
+    private Object handleListType(JSONObject param, Class<?> reqType) {
+        if (reqType == null) {
+            logger.warn("List的泛型类型未指定");
+            return null;
+        }
+
+        String jsonStr = NpcsSerializerUtil.writeValueAsStringNormal(param);
+        JavaType listType = NpcsSerializerUtil.getTypeByClass(List.class, reqType);
+        return null;
+        //return NpcsSerializerUtil.readValueNormal(jsonStr, listType);
+    }
+
+    /**
+     * 处理分页类型参数
+     */
+    private Object handlePageType(JSONObject param, Class<?> pageType) {
+        // 1. 提取分页基本参数
+        int pageNum = param.getIntValue("pageNum", 1);
+        int pageSize = param.getIntValue("pageSize", 10);
+
+        // 2. 获取数据部分
+        JSONObject dataObj = param.getJSONObject("data");
+        if (dataObj == null) {
+            logger.warn("分页参数中缺少data字段");
+            return null;
+        }
+
+        try {
+            // 3. 创建分页对象实例
+            Object pageInstance = pageType.getDeclaredConstructor().newInstance();
+
+            // 4. 设置分页基本参数
+            Method setPageNum = pageType.getMethod("setPageNum", int.class);
+            Method setPageSize = pageType.getMethod("setPageSize", int.class);
+            setPageNum.invoke(pageInstance, pageNum);
+            setPageSize.invoke(pageInstance, pageSize);
+
+            // 5. 设置查询条件
+            Method setData = pageType.getMethod("setData", Object.class);
+            setData.invoke(pageInstance, dataObj);
+
+            return pageInstance;
+        } catch (Exception e) {
+            logger.error("创建分页对象失败", e);
+            throw new RuntimeException("创建分页对象失败", e);
+        }
+    }
+
+    /**
+     * 处理实体类型参数
+     */
+    private Object handleEntityType(JSONObject param, Class<?> entityType) {
+        String jsonStr = NpcsSerializerUtil.writeValueAsStringNormal(param);
+        return NpcsSerializerUtil.readValueNormal(jsonStr, entityType);
+    }
+
+    /**
+     * 判断是否为基本类型或其包装类
+     */
+    private boolean isPrimitiveOrWrapper(Class<?> type) {
+        return type.isPrimitive() ||
+               type == String.class ||
+               type == Integer.class ||
+               type == Long.class ||
+               type == Double.class ||
+               type == Float.class ||
+               type == Boolean.class ||
+               type == Byte.class ||
+               type == Short.class ||
+               type == Character.class ||
+               type == BigDecimal.class;
+    }
+
+    /**
+     * 构建请求对象
+     * @param serviceInfo 服务信息
+     * @return 请求对象
+     */
+    public RequestObject buildRequestObjectByInfo(ServiceApiInfo serviceInfo) {
+        RequestObject requestObject = new RequestObject();
+        requestObject.setArgsType(serviceInfo.getRequestType());
+        //requestObject.setParameterizedTypes(serviceInfo.);
+        return requestObject;
+    }
 } 
