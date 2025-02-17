@@ -89,53 +89,27 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
     }
 
     /**
-     * 处理前端请求参数并转换为适合后端微服务接口的参数类型。
-     *
-     * @param serviceInfo 后端服务信息对象，包含接口参数类型等相关信息。
-     * @param param      前端传入的 JSON 对象参数。
-     * @return 转换后的请求参数数组，供后端微服务调用使用。
+     * 处理前端请求参数并递归转换为后端所需的参数类型
      */
     public Object[] handleRequestParams(ServiceApiInfo serviceInfo, JSONObject param) {
         logger.info("开始处理请求参数, serviceInfo: {}, param: {}", serviceInfo, param);
 
-        // 1. 获取参数类型信息
         Class<?>[] reqTypes = serviceInfo.getRequestType();
         if (reqTypes == null || reqTypes.length == 0) {
             logger.warn("请求参数类型为空");
             return new Object[]{null};
         }
+        
         Class<?> reqType = reqTypes[0];
-
-        // 2. 如果请求参数为空，返回null
         if (param == null || param.isEmpty()) {
             logger.info("请求参数为空");
             return new Object[]{null};
         }
 
         try {
-            // 3. 处理不同类型的参数
-            Object convertedParam = null;
-
-            // 3.1 处理基本类型
-            if (isPrimitiveOrWrapper(reqType)) {
-                convertedParam = handlePrimitiveType(param, reqType);
-            }
-            // 3.2 处理List类型
-            else if (List.class.isAssignableFrom(reqType)) {
-                convertedParam = handleListType(param, reqType);
-            }
-            // 3.3 处理分页类型
-            else if (reqType.getName().contains("PageParam") || reqType.getName().contains("Page")) {
-                convertedParam = handlePageType(param, reqType);
-            }
-            // 3.4 处理普通实体类型
-            else {
-                convertedParam = handleEntityType(param, reqType);
-            }
-
+            Object convertedParam = recursiveConvertParam(param, reqType);
             logger.info("参数处理完成, 转换后的参数: {}", convertedParam);
             return new Object[]{convertedParam};
-
         } catch (Exception e) {
             logger.error("处理请求参数时发生错误", e);
             throw new RuntimeException("参数转换失败: " + e.getMessage(), e);
@@ -143,74 +117,208 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
     }
 
     /**
-     * 处理基本类型参数
+     * 递归转换参数
+     * @param param 待转换的参数
+     * @param targetType 目标类型
+     * @return 转换后的对象
      */
-    private Object handlePrimitiveType(JSONObject param, Class<?> targetType) {
-        if (param.isEmpty()) {
+    private Object recursiveConvertParam(Object param, Class<?> targetType) {
+        if (param == null) {
             return null;
         }
 
-        String firstKey = param.keySet().iterator().next();
-        return param.getObject(firstKey, targetType);
+        // 处理基本类型
+        if (isPrimitiveOrWrapper(targetType)) {
+            return convertToPrimitiveType(param, targetType);
+        }
+
+        // 处理List类型
+        if (List.class.isAssignableFrom(targetType)) {
+            return handleListTypeRecursively(param, targetType);
+        }
+
+        // 处理Map类型
+        if (param instanceof JSONObject) {
+            JSONObject jsonObj = (JSONObject) param;
+            
+            // 处理分页对象
+            if (targetType.getName().contains("PageParam") || targetType.getName().contains("Page")) {
+                //return handlePageType(jsonObj, targetType);
+            }
+
+            // 处理普通对象
+            try {
+                Object instance = targetType.getDeclaredConstructor().newInstance();
+                // 获取目标类型的所有字段
+                java.lang.reflect.Field[] fields = targetType.getDeclaredFields();
+                
+                for (java.lang.reflect.Field field : fields) {
+                    field.setAccessible(true);
+                    String fieldName = field.getName();
+                    
+                    if (jsonObj.containsKey(fieldName)) {
+                        Object fieldValue = jsonObj.get(fieldName);
+                        // 递归处理字段值
+                        Object convertedValue = recursiveConvertParam(fieldValue, field.getType());
+                        field.set(instance, convertedValue);
+                    }
+                }
+                return instance;
+            } catch (Exception e) {
+                logger.error("递归转换对象失败", e);
+                throw new RuntimeException("递归转换对象失败: " + e.getMessage(), e);
+            }
+        }
+
+        return param;
     }
 
     /**
-     * 处理List类型参数
+     * 获取List的泛型类型
      */
-    private Object handleListType(JSONObject param, Class<?> reqType) {
-        if (reqType == null) {
-            logger.warn("List的泛型类型未指定");
-            return null;
+    private Class<?> getGenericType(Class<?> targetType) {
+        try {
+            // 如果是List类型，直接从方法参数中获取泛型类型
+            if (List.class.isAssignableFrom(targetType)) {
+                return getListGenericType(targetType);
+            }
+            
+            // 获取字段的所有泛型参数类型
+            java.lang.reflect.Field[] fields = targetType.getDeclaredFields();
+            for (java.lang.reflect.Field field : fields) {
+                field.setAccessible(true);
+                if (List.class.isAssignableFrom(field.getType())) {
+                    java.lang.reflect.Type genericType = field.getGenericType();
+                    if (genericType instanceof java.lang.reflect.ParameterizedType) {
+                        java.lang.reflect.ParameterizedType paramType = (java.lang.reflect.ParameterizedType) genericType;
+                        java.lang.reflect.Type[] typeArguments = paramType.getActualTypeArguments();
+                        if (typeArguments.length > 0) {
+                            java.lang.reflect.Type actualType = typeArguments[0];
+                            if (actualType instanceof Class) {
+                                return (Class<?>) actualType;
+                            } else if (actualType instanceof java.lang.reflect.ParameterizedType) {
+                                return (Class<?>) ((java.lang.reflect.ParameterizedType) actualType).getRawType();
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("获取List泛型类型失败", e);
         }
-
-        String jsonStr = NpcsSerializerUtil.writeValueAsStringNormal(param);
-        JavaType listType = NpcsSerializerUtil.getTypeByClass(List.class, reqType);
         return null;
-        //return NpcsSerializerUtil.readValueNormal(jsonStr, listType);
     }
 
     /**
-     * 处理分页类型参数
+     * 获取List的具体泛型类型
      */
-    private Object handlePageType(JSONObject param, Class<?> pageType) {
-        // 1. 提取分页基本参数
-        int pageNum = param.getIntValue("pageNum", 1);
-        int pageSize = param.getIntValue("pageSize", 10);
+    private Class<?> getListGenericType(Class<?> targetType) {
+        try {
+            // 获取字段类型的泛型参数
+            java.lang.reflect.Type[] genericInterfaces = targetType.getGenericInterfaces();
+            for (java.lang.reflect.Type genericInterface : genericInterfaces) {
+                if (genericInterface instanceof java.lang.reflect.ParameterizedType) {
+                    java.lang.reflect.ParameterizedType paramType = (java.lang.reflect.ParameterizedType) genericInterface;
+                    java.lang.reflect.Type[] typeArguments = paramType.getActualTypeArguments();
+                    if (typeArguments.length > 0) {
+                        if (typeArguments[0] instanceof Class) {
+                            return (Class<?>) typeArguments[0];
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("获取List泛型类型失败", e);
+        }
+        return null;
+    }
 
-        // 2. 获取数据部分
-        JSONObject dataObj = param.getJSONObject("data");
-        if (dataObj == null) {
-            logger.warn("分页参数中缺少data字段");
+    /**
+     * 递归处理List类型
+     */
+    private Object handleListTypeRecursively(Object param, Class<?> targetType) {
+        if (!(param instanceof List)) {
+            return null;
+        }
+
+        List<?> sourceList = (List<?>) param;
+        List<Object> resultList = new java.util.ArrayList<>();
+        
+        // 获取List的泛型类型
+        Class<?> genericType = getGenericType(targetType);
+        if (genericType == null) {
+            // 如果无法获取泛型类型，尝试从第一个非空元素推断类型
+            for (Object item : sourceList) {
+                if (item != null) {
+                    // 尝试通过反射获取实际类型
+                    try {
+                        String className = item.getClass().getName();
+                        genericType = Class.forName(className);
+                        break;
+                    } catch (ClassNotFoundException e) {
+                        logger.warn("无法加载类: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+        
+        if (genericType == null) {
+            logger.warn("无法确定List的泛型类型，将按原样返回");
+            return sourceList;
+        }
+
+        // 递归处理List中的每个元素
+        for (Object item : sourceList) {
+            if (item != null) {
+                try {
+                    // 将JSON对象转换为目标类型
+                    if (item instanceof JSONObject) {
+                        Object convertedItem = ((JSONObject) item).toJavaObject(genericType);
+                        resultList.add(convertedItem);
+                    } else {
+                        Object convertedItem = recursiveConvertParam(item, genericType);
+                        resultList.add(convertedItem);
+                    }
+                } catch (Exception e) {
+                    logger.error("转换List元素失败: {}", e.getMessage());
+                    resultList.add(item);
+                }
+            } else {
+                resultList.add(null);
+            }
+        }
+
+        return resultList;
+    }
+
+    /**
+     * 转换为基本类型
+     */
+    private Object convertToPrimitiveType(Object value, Class<?> targetType) {
+        if (value == null) {
             return null;
         }
 
         try {
-            // 3. 创建分页对象实例
-            Object pageInstance = pageType.getDeclaredConstructor().newInstance();
-
-            // 4. 设置分页基本参数
-            Method setPageNum = pageType.getMethod("setPageNum", int.class);
-            Method setPageSize = pageType.getMethod("setPageSize", int.class);
-            setPageNum.invoke(pageInstance, pageNum);
-            setPageSize.invoke(pageInstance, pageSize);
-
-            // 5. 设置查询条件
-            Method setData = pageType.getMethod("setData", Object.class);
-            setData.invoke(pageInstance, dataObj);
-
-            return pageInstance;
+            if (targetType == String.class) {
+                return value.toString();
+            } else if (targetType == Integer.class || targetType == int.class) {
+                return Integer.valueOf(value.toString());
+            } else if (targetType == Long.class || targetType == long.class) {
+                return Long.valueOf(value.toString());
+            } else if (targetType == Double.class || targetType == double.class) {
+                return Double.valueOf(value.toString());
+            } else if (targetType == Boolean.class || targetType == boolean.class) {
+                return Boolean.valueOf(value.toString());
+            } else if (targetType == BigDecimal.class) {
+                return new BigDecimal(value.toString());
+            }
+            // 可以根据需要添加其他基本类型的转换
         } catch (Exception e) {
-            logger.error("创建分页对象失败", e);
-            throw new RuntimeException("创建分页对象失败", e);
+            logger.error("转换基本类型失败: {} -> {}", value, targetType, e);
+            throw new RuntimeException("转换基本类型失败", e);
         }
-    }
-
-    /**
-     * 处理实体类型参数
-     */
-    private Object handleEntityType(JSONObject param, Class<?> entityType) {
-        String jsonStr = NpcsSerializerUtil.writeValueAsStringNormal(param);
-        return NpcsSerializerUtil.readValueNormal(jsonStr, entityType);
+        return value;
     }
 
     /**
