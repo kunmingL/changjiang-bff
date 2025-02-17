@@ -1,5 +1,6 @@
 package com.changjiang.bff.core;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.changjiang.bff.annotation.ServiceConfig;
 import com.changjiang.bff.config.ServiceScanProperties;
 import com.changjiang.grpc.factory.GrpcServiceFactory;
@@ -34,7 +35,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
-import java.lang.reflect.Method;
+import java.lang.reflect.*;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.*;
@@ -178,41 +179,154 @@ public class ApiScanner {
         // 1. 获取方法上的@ServiceConfig注解
         ServiceConfig configAnnotation = method.getAnnotation(ServiceConfig.class);
         if (configAnnotation == null) {
-            logger.warn("方法 {}.{} 未找到@ServiceConfig注解，跳过处理", method.getDeclaringClass().getName(), method.getName());
-            return;
-        }
-
-        // 2. 创建ServiceApiInfo对象
-        if (configAnnotation == null) {
-            logger.warn("Method {}.{} has no @ServiceConfig annotation",
+            logger.warn("方法 {}.{} 未找到@ServiceConfig注解，跳过处理",
                     method.getDeclaringClass().getName(), method.getName());
             return;
         }
 
-        // 2. 创建gRPC客户端实例
-       // Object grpcClient = createGrpcClient(method.getDeclaringClass());
-        Object grpcClient = grpcServiceFactory.createServiceFromLoadedClass(configAnnotation.registryId(),method.getDeclaringClass());
+        try {
+            // 2. 创建gRPC客户端实例
+            Object grpcClient = grpcServiceFactory.createServiceFromLoadedClass(
+                    configAnnotation.registryId(), method.getDeclaringClass());
 
-        // 3. 构建ServiceApiInfo
-        ServiceApiInfo apiInfo = ServiceApiInfo.builder()
-                .method(method)
-                .serviceConfig(configAnnotation)
-                .instance(grpcClient)
-                // 获取方法参数类型和返回类型
-                .requestType(method.getParameterTypes().length > 0 ?
-                        method.getParameterTypes() : null)
-                .responseType(method.getReturnType())
-                .methodName(method.getName())
-                // HTTP相关信息
-                .url(configAnnotation.url())
-                .registryId(configAnnotation.registryId())
-                .build();
+            // 3. 扫描方法相关的所有DTO类
+            Set<Class<?>> relatedDtoClasses = new HashSet<>();
+            // 扫描参数类型
+            for (Class<?> paramType : method.getParameterTypes()) {
+                scanRelatedDtoClasses(paramType, relatedDtoClasses);
+            }
+            // 扫描返回类型
+            scanRelatedDtoClasses(method.getReturnType(), relatedDtoClasses);
 
+            // 4. 构建ServiceApiInfo
+            ServiceApiInfo apiInfo = ServiceApiInfo.builder()
+                    .method(method)
+                    .serviceConfig(configAnnotation)
+                    .instance(grpcClient)
+                    .requestType(method.getParameterTypes())
+                    .responseType(method.getReturnType())
+                    .relatedDtoClasses(relatedDtoClasses) // 添加相关DTO类信息
+                    .build();
 
-        // 4. 将服务API信息存入apiRegistry
-        String key = configAnnotation.url();
-        apiRegistry.put(key, apiInfo);
-        logger.info("成功注册服务API: {}.{}，键: {}", method.getDeclaringClass().getName(), method.getName(), key);
+            // 4. 将服务API信息存入apiRegistry
+            String key = configAnnotation.url();
+            apiRegistry.put(key, apiInfo);
+            logger.info("成功注册服务API: {}.{}，键: {}", method.getDeclaringClass().getName(), method.getName(), key);
+        } catch (Exception e) {
+            logger.error("处理方法失败: {}.{}", method.getDeclaringClass().getName(), method.getName(), e);
+        }
+    }
+
+    /**
+     * 递归扫描相关的DTO类
+     */
+    private void scanRelatedDtoClasses(Class<?> type, Set<Class<?>> collectedClasses) {
+        if (type == null || collectedClasses.contains(type) || isBasicType(type)) {
+            return;
+        }
+
+        try {
+            // 1. 检查是否是DTO类
+            if (isDtoClass(type)) {
+                collectedClasses.add(type);
+                logger.debug("发现DTO类: {}", type.getName());
+            }
+
+            // 2. 处理泛型类型
+            if (type.getTypeParameters().length > 0) {
+                for (TypeVariable<?> typeVariable : type.getTypeParameters()) {
+                    if (typeVariable.getBounds() != null) {
+                        for (Type bound : typeVariable.getBounds()) {
+                            if (bound instanceof Class && !isBasicType((Class<?>) bound)) {
+                                scanRelatedDtoClasses((Class<?>) bound, collectedClasses);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. 处理集合类型
+            if (Collection.class.isAssignableFrom(type)) {
+                Type genericType = type.getGenericSuperclass();
+                if (genericType instanceof ParameterizedType) {
+                    Type[] actualTypeArguments = ((ParameterizedType) genericType).getActualTypeArguments();
+                    for (Type argType : actualTypeArguments) {
+                        if (argType instanceof Class && !isBasicType((Class<?>) argType)) {
+                            scanRelatedDtoClasses((Class<?>) argType, collectedClasses);
+                        }
+                    }
+                }
+            }
+
+            // 4. 递归处理字段类型
+            for (Field field : type.getDeclaredFields()) {
+                Class<?> fieldType = field.getType();
+                // 只处理非基本类型的字段
+                if (!isBasicType(fieldType)) {
+                    scanRelatedDtoClasses(fieldType, collectedClasses);
+
+                    // 处理字段的泛型类型
+                    Type genericType = field.getGenericType();
+                    if (genericType instanceof ParameterizedType) {
+                        ParameterizedType paramType = (ParameterizedType) genericType;
+                        for (Type argType : paramType.getActualTypeArguments()) {
+                            if (argType instanceof Class && !isBasicType((Class<?>) argType)) {
+                                scanRelatedDtoClasses((Class<?>) argType, collectedClasses);
+                            }
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            logger.warn("扫描类型 {} 的相关DTO类时发生错误: {}", type.getName(), e.getMessage());
+        }
+    }
+
+    /**
+     * 判断是否为基本类型或其包装类型
+     */
+    private boolean isBasicType(Class<?> type) {
+        return type.isPrimitive() ||
+                type == String.class ||
+                type == Integer.class ||
+                type == Long.class ||
+                type == Double.class ||
+                type == Float.class ||
+                type == Boolean.class ||
+                type == Byte.class ||
+                type == Short.class ||
+                type == Character.class ||
+                type == java.math.BigDecimal.class ||
+                type == java.math.BigInteger.class ||
+                type == java.util.Date.class ||
+                type == java.sql.Date.class ||
+                type == java.sql.Timestamp.class ||
+                type.isEnum() ||
+                type.getName().startsWith("java.lang.") ||
+                type.getName().startsWith("java.sql.") ||
+                type.getName().startsWith("java.time.") ||
+                type == JSONObject.class;
+    }
+
+    /**
+     * 判断是否是DTO类
+     */
+    private boolean isDtoClass(Class<?> type) {
+        if (type.isPrimitive() || type.getName().startsWith("java.")) {
+            return false;
+        }
+
+        // 检查类名是否符合DTO命名规范
+        String className = type.getSimpleName();
+        return className.endsWith("DTO") ||
+                className.endsWith("Dto") ||
+                className.endsWith("Bean") ||
+                className.endsWith("Entity") ||
+                className.endsWith("Model") ||
+                type.getPackage().getName().contains(".dto") ||
+                type.getPackage().getName().contains(".model") ||
+                type.getPackage().getName().contains(".entity");
     }
 
     /**
@@ -314,18 +428,18 @@ public class ApiScanner {
         //     }
         //     return jarFiles;
         // } catch (DependencyResolutionException e) {
-            logger.warn("Failed to resolve artifact from remote repositories: {}:{}:{}", groupId, artifactId, version);
+        logger.warn("Failed to resolve artifact from remote repositories: {}:{}:{}", groupId, artifactId, version);
 
-            // 4. 如果远程仓库未找到，回退到本地仓库
-            File localFile = getLocalArtifactFile(session.getLocalRepository().getBasedir(), artifact);
-            if (localFile.exists()) {
-                logger.info("Artifact found in local repository: {}", localFile.getAbsolutePath());
-                return Collections.singleton(localFile);
-            } else {
-                logger.error("Artifact not found in local repository: {}:{}:{}", groupId, artifactId, version);
-                return null;
-                //throw e; // 如果本地仓库也没有，抛出异常
-            }
+        // 4. 如果远程仓库未找到，回退到本地仓库
+        File localFile = getLocalArtifactFile(session.getLocalRepository().getBasedir(), artifact);
+        if (localFile.exists()) {
+            logger.info("Artifact found in local repository: {}", localFile.getAbsolutePath());
+            return Collections.singleton(localFile);
+        } else {
+            logger.error("Artifact not found in local repository: {}:{}:{}", groupId, artifactId, version);
+            return null;
+            //throw e; // 如果本地仓库也没有，抛出异常
+        }
         //}
     }
 
@@ -343,4 +457,6 @@ public class ApiScanner {
                 artifact.getExtension());
         return new File(path);
     }
+
+
 }

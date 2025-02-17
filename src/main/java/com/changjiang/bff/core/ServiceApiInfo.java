@@ -8,8 +8,10 @@ import lombok.Data;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 
 /**
@@ -56,6 +58,7 @@ public class ServiceApiInfo {
 
     private String registryId;
 
+    private Set<Class<?>> relatedDtoClasses;
     
     /** 
      * 参数描述列表
