@@ -80,6 +80,8 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
         try {
             logger.info("调用服务方法: {}.{}", method.getDeclaringClass().getName(), method.getName());
             Object[] objects = handleRequestParams(apiInfo, params);
+            // Object o = "kunming";
+            // Object[] objects = new Object[]{o};
             if (!method.getParameterTypes()[0].isAssignableFrom(objects[0].getClass())) {
                 throw new IllegalArgumentException("参数类型不匹配");
             }
@@ -158,6 +160,9 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
 
     /**
      * 处理List类型参数
+     * 支持两种格式：
+     * 1. {"list": [...]} - 传统格式
+     * 2. {"data": [...]} - 新的标准格式
      */
     private Object handleListType(JSONObject param, Class<?> reqType) {
         if (reqType == null) {
@@ -166,20 +171,37 @@ public class MethodInvocationServiceIml implements MethodInvocationService {
         }
 
         try {
-            // 如果参数包含在 "list" 字段中
+            // 1. 首先尝试从 "data" 字段获取数据（新的标准格式）
+            if (param.containsKey("data")) {
+                Object dataArray = param.get("data");
+                if (dataArray instanceof Collection) {
+                    return dataArray;
+                }
+                // 将data字段的内容转换为目标类型
+                String dataJson = JSON.toJSONString(dataArray);
+                logger.debug("从data字段解析List数据: {}", dataJson);
+                return NpcsSerializerUtil.readValueNormal(dataJson, reqType);
+            }
+
+            // 2. 尝试从 "list" 字段获取数据（兼容旧格式）
             if (param.containsKey("list")) {
-                // 直接获取list字段的值并转换
                 Object listData = param.get("list");
                 if (listData instanceof Collection) {
                     return listData;
                 }
-                // 将list字段的内容转换为目标类型
                 String listJson = JSON.toJSONString(listData);
+                logger.debug("从list字段解析List数据: {}", listJson);
                 return NpcsSerializerUtil.readValueNormal(listJson, reqType);
             }
             
-            // 如果直接是数组/集合数据
+            // 3. 如果整个参数就是一个数组
+            if (param.size() == 1 && param.values().iterator().next() instanceof Collection) {
+                return param.values().iterator().next();
+            }
+
+            // 4. 尝试直接转换整个参数对象
             String jsonStr = NpcsSerializerUtil.writeValueAsStringNormal(param);
+            logger.debug("直接解析整个参数对象: {}", jsonStr);
             return NpcsSerializerUtil.readValueNormal(jsonStr, reqType);
             
         } catch (Exception e) {
