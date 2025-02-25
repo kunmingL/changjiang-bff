@@ -191,12 +191,43 @@ public class ApiScanner {
 
             // 3. 扫描方法相关的所有DTO类
             Set<Class<?>> relatedDtoClasses = new HashSet<>();
+            
             // 扫描参数类型
-            for (Class<?> paramType : method.getParameterTypes()) {
-                scanRelatedDtoClasses(paramType, relatedDtoClasses);
+            Parameter[] parameters = method.getParameters();
+            for (Parameter parameter : parameters) {
+                Class<?> paramType = parameter.getType();
+                Type paramGenericType = parameter.getParameterizedType();
+                
+                if (paramGenericType instanceof ParameterizedType) {
+                    // 处理泛型参数
+                    ParameterizedType parameterizedType = (ParameterizedType) paramGenericType;
+                    Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+                    for (Type argType : actualTypeArguments) {
+                        if (argType instanceof Class && !isBasicType((Class<?>) argType)) {
+                            scanRelatedDtoClasses((Class<?>) argType, relatedDtoClasses);
+                        }
+                    }
+                } else {
+                    // 处理非泛型参数
+                    scanRelatedDtoClasses(paramType, relatedDtoClasses);
+                }
             }
+            
             // 扫描返回类型
-            scanRelatedDtoClasses(method.getReturnType(), relatedDtoClasses);
+            Type returnType = method.getGenericReturnType();
+            if (returnType instanceof ParameterizedType) {
+                // 处理泛型返回值
+                ParameterizedType parameterizedType = (ParameterizedType) returnType;
+                Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+                for (Type argType : actualTypeArguments) {
+                    if (argType instanceof Class && !isBasicType((Class<?>) argType)) {
+                        scanRelatedDtoClasses((Class<?>) argType, relatedDtoClasses);
+                    }
+                }
+            } else {
+                // 处理非泛型返回值
+                scanRelatedDtoClasses(method.getReturnType(), relatedDtoClasses);
+            }
 
             // 4. 构建ServiceApiInfo
             ServiceApiInfo apiInfo = ServiceApiInfo.builder()
@@ -205,7 +236,7 @@ public class ApiScanner {
                     .instance(grpcClient)
                     .requestType(method.getParameterTypes())
                     .responseType(method.getReturnType())
-                    .relatedDtoClasses(relatedDtoClasses) // 添加相关DTO类信息
+                    .relatedDtoClasses(relatedDtoClasses)
                     .build();
 
             // 4. 将服务API信息存入apiRegistry
@@ -226,55 +257,37 @@ public class ApiScanner {
         }
 
         try {
-            // 1. 检查是否是DTO类
+            // 1. 处理List类型
+            if (Collection.class.isAssignableFrom(type)) {
+                logger.debug("处理集合类型: {}", type.getName());
+                return; // List类型本身不需要继续处理，其泛型类型已在方法参数和返回值处理中处理
+            }
+
+            // 2. 检查是否是DTO类
             if (isDtoClass(type)) {
                 collectedClasses.add(type);
                 logger.debug("发现DTO类: {}", type.getName());
             }
 
-            // 2. 处理泛型类型
-            if (type.getTypeParameters().length > 0) {
-                for (TypeVariable<?> typeVariable : type.getTypeParameters()) {
-                    if (typeVariable.getBounds() != null) {
-                        for (Type bound : typeVariable.getBounds()) {
-                            if (bound instanceof Class && !isBasicType((Class<?>) bound)) {
-                                scanRelatedDtoClasses((Class<?>) bound, collectedClasses);
-                            }
-                        }
-                    }
-                }
-            }
+            // 3. 处理字段类型
+            for (Field field : type.getDeclaredFields()) {
+                Class<?> fieldType = field.getType();
+                Type genericType = field.getGenericType();
 
-            // 3. 处理集合类型
-            if (Collection.class.isAssignableFrom(type)) {
-                Type genericType = type.getGenericSuperclass();
+                // 处理字段的泛型类型
                 if (genericType instanceof ParameterizedType) {
-                    Type[] actualTypeArguments = ((ParameterizedType) genericType).getActualTypeArguments();
+                    ParameterizedType paramType = (ParameterizedType) genericType;
+                    Type[] actualTypeArguments = paramType.getActualTypeArguments();
                     for (Type argType : actualTypeArguments) {
                         if (argType instanceof Class && !isBasicType((Class<?>) argType)) {
                             scanRelatedDtoClasses((Class<?>) argType, collectedClasses);
                         }
                     }
                 }
-            }
-
-            // 4. 递归处理字段类型
-            for (Field field : type.getDeclaredFields()) {
-                Class<?> fieldType = field.getType();
-                // 只处理非基本类型的字段
+                
+                // 处理非泛型类型
                 if (!isBasicType(fieldType)) {
                     scanRelatedDtoClasses(fieldType, collectedClasses);
-
-                    // 处理字段的泛型类型
-                    Type genericType = field.getGenericType();
-                    if (genericType instanceof ParameterizedType) {
-                        ParameterizedType paramType = (ParameterizedType) genericType;
-                        for (Type argType : paramType.getActualTypeArguments()) {
-                            if (argType instanceof Class && !isBasicType((Class<?>) argType)) {
-                                scanRelatedDtoClasses((Class<?>) argType, collectedClasses);
-                            }
-                        }
-                    }
                 }
             }
 
